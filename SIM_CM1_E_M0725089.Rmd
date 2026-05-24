@@ -1,0 +1,198 @@
+---
+title: "Analisis Geografis Pelanggan dan Performa Penjualan Antar Cabang Sakila"
+author: "Muhammad Irsyad Baihaqi - M0725089 - B"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: flatly
+    toc: true
+    toc_float: true
+---
+
+<style>
+/* Kustomisasi CSS sesuai ketentuan tugas nomor 5 */
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    color: #2c3e50;
+    background-color: #fafafa;
+}
+h1, h2, h3 {
+    color: #2c3e50;
+    border-bottom: 2px solid #e74c3c;
+    padding-bottom: 5px;
+}
+.insight-box {
+    background-color: #fdf2e9;
+    border-left: 5px solid #e74c3c;
+    padding: 15px;
+    margin-bottom: 20px;
+    border-radius: 4px;
+}
+</style>
+
+## 1. Deskripsi Insight dan Data
+
+<div class="insight-box">
+<strong>Insight yang diambil:</strong> Analisis ini berfokus pada segmentasi geografis untuk mengetahui negara asal pelanggan yang paling loyal (paling sering melakukan transaksi), serta melihat perbandingan performa total penjualan antara Store 1 dan Store 2.
+</div>
+
+Data diekstrak langsung dari database `sakila` lokal Anda dengan menghubungkan tabel `payment`, `customer`, `address`, `city`, `country`, dan `store`.
+
+Secara metodologis, total pembelanjaan dihitung menggunakan fungsi agregasi matematika berikut:
+
+$$Total\ Pembelanjaan = \sum_{i=1}^{n} P_i$$
+
+**Penjelasan Rumus:**
+* **$\sum$ (Sigma):** Simbol penjumlahan beruntun untuk seluruh data transaksi yang memenuhi kriteria kelompok.
+* **$i=1$:** Indeks awal transaksi, dimulai dari transaksi pertama.
+* **$n$:** Jumlah total transaksi ($n$) yang tercatat pada kelompok tersebut (negara atau cabang toko tertentu).
+* **$P_i$:** Nilai nominal (amount) dari transaksi ke-$i$.
+
+---
+
+## 2. Pengaturan Koneksi dan Pengambilan Data
+
+```{r setup-connection, message=FALSE, warning=FALSE}
+# Load library utama
+library(DBI)
+library(RMySQL)
+library(dplyr)
+library(ggplot2)
+library(scales)
+
+# Koneksi ke MySQL (Silakan sesuaikan user & password lokal Anda)
+con2 <- DBI::dbConnect(odbc::odbc(), 
+    Driver = "MySQL ODBC 8.0 ANSI Driver", 
+    Server = "127.0.0.1",
+    Database = "sakila", 
+    UID = "root", 
+    PWD = "Irsyad_123#", 
+    Port = 3306
+    )
+```
+
+## 3.Query Top 10 Negara dengan Pelanggan Paling Banyak Berbelanja
+```{r}
+
+query_country <- "
+  SELECT 
+    co.country AS negara,
+    COUNT(p.payment_id) AS total_transaksi,
+    SUM(p.amount) AS total_pembelanjaan
+  FROM payment p
+  JOIN customer cu ON p.customer_id = cu.customer_id
+  JOIN address a ON cu.address_id = a.address_id
+  JOIN city ci ON a.city_id = ci.city_id
+  JOIN country co ON ci.country_id = co.country_id
+  GROUP BY co.country
+  ORDER BY total_pembelanjaan DESC
+  LIMIT 10;
+"
+data_country <- dbGetQuery(con2, query_country)
+```
+
+## 4. Query Perbandingan Performa Penjualan antar Cabang (Store)
+```{r}
+query_store <- "
+  SELECT 
+    s.store_id AS toko,
+    COUNT(p.payment_id) AS jumlah_transaksi,
+    SUM(p.amount) AS total_pendapatan
+  FROM payment p
+  JOIN staff st ON p.staff_id = st.staff_id
+  JOIN store s ON st.store_id = s.store_id
+  GROUP BY s.store_id;
+"
+data_store <- dbGetQuery(con2, query_store)
+
+# Memutuskan koneksi database
+dbDisconnect(con2)
+```
+
+## 5. Visualisasi Data
+Interpretasi Hasil Visualisasi Data:
+
+1. **Pola Konsentrasi Pasar Geografis (Grafik 1):**
+   Visualisasi grafik batang horizontal menunjukkan disparitas volume kontribusi belanja antar negara. Negara **India** menempati posisi puncak sebagai pasar paling potensial, disusul ketat oleh **China** dan **United States**. Ketiga wilayah geografis ini memegang peranan krusial sebagai jangkar pendapatan platform Sakila, mengindikasikan bahwa akselerasi kampanye pemasaran digital global dan penambahan variasi konten inventaris film berbasis preferensi budaya lokal harus diprioritaskan pada klaster wilayah tersebut.
+
+
+```{r}
+ggplot(data_country, aes(x = reorder(negara, total_pembelanjaan), y = total_pembelanjaan, fill = total_pembelanjaan)) +
+  geom_bar(stat = "identity", fill = "#e74c3c") +
+  coord_flip() +
+  theme_minimal() +
+  labs(
+    title = "10 Negara Asal Pelanggan dengan Kontribusi Terbesar",
+    x = "Negara",
+    y = "Total Pembelian ($)"
+  ) +
+  scale_y_continuous(labels = dollar_format())
+```
+
+2. **Keseimbangan Penjualan Spasial (Grafik 2):**
+   Grafik komparasi antar cabang memperlihatkan struktur tinggi batang diagram yang hampir identik secara visual. **Store 1** dan **Store 2** menunjukkan performa finansial yang sangat bersaing ketat dengan total perolehan kumulatif berada stabil di kisaran \$33,000. Fenomena ini mengindikasikan tidak adanya monopoli performa pada satu titik cabang saja, melainkan mencerminkan keberhasilan manajemen rantai pasok dalam mendistribusikan inventaris film secara merata serta standardisasi kualitas pelayanan staf yang homogen di kedua lokasi operasional.
+```{r}
+data_store$toko <- paste("Store", data_store$toko)
+
+ggplot(data_store, aes(x = toko, y = total_pendapatan, fill = toko)) +
+  geom_bar(stat = "identity", width = 0.5) +
+  scale_fill_manual(values = c("#34495e", "#e67e22")) +
+  theme_minimal() +
+  labs(
+    title = "Perbandingan Total Pendapatan antar Cabang",
+    x = "Cabang Toko",
+    y = "Total Pendapatan ($)"
+  ) +
+  scale_y_continuous(labels = dollar_format()) +
+  theme(legend.position = "none")
+```
+
+## 6. Persamaan Matematis
+
+### 1. Demografi Pelanggan
+  Negara India, China, dan United States merupakan tiga negara teratas yang memiliki basis pelanggan paling loyal dengan nilai transaksi kumulatif tertinggi di platform Sakila. Strategi pemasaran digital global sebaiknya lebih difokuskan pada wilayah-wilayah ini.
+
+Kontribusi persentase pendapatan negara ke-$k$ terhadap akumulasi total pendapatan kelompok 10 besar negara dapat dirumuskan secara matematis sebagai berikut:
+
+$$
+\%Kontribusi = \left( \frac{\text{total\_pembelanjaan}_k}{\sum_{j=1}^{10} \text{total\_pembelanjaan}_j} \right) \times 100\%
+$$
+
+**Penjelasan Rumus:**
+
+* **$\%Kontribusi$**: Nilai persentase andil pendapatan dari suatu negara terhadap total pendapatan 10 besar negara.
+* **$\text{total\_pembelanjaan}_k$**: Nilai total pengeluaran belanja yang dihasilkan spesifik oleh negara tertentu (negara ke-$k$).
+* **$\sum_{j=1}^{10}$**: Simbol sigma yang menunjukkan operasi penjumlahan beruntun dari indeks peringkat ke-1 sampai ke-10.
+* **$\text{total\_pembelanjaan}_j$**: Nominal belanja dari masing-masing negara yang masuk dalam daftar peringkat 10 besar.
+* **$\times 100\%$**: Faktor pengali untuk mengonversi nilai pecahan rasio menjadi bentuk persentase standar.
+
+
+### 2. Performa Antar Cabang
+  Pendapatan antara Store 1 ($ST_1$) dan Store 2 ($ST_2$) relatif seimbang dan bersaing sangat ketat (keduanya berhasil meraup pendapatan di kisaran $33,000). 
+
+Tingkat ketimpangan deviasi atau selisih pendapatan mutlak antar cabang ($\Delta R$) dapat dinyatakan melalui persamaan berikut:
+
+$$
+\Delta R = |ST_1 - ST_2| \approx 0
+$$
+
+**Penjelasan Rumus:**
+
+* **$\Delta R$ (Delta R)**: Simbol yang mewakili nilai selisih atau perubahan total pendapatan (*revenue*) di antara kedua cabang toko.
+* **$| \dots |$ (Nilai Mutlak/Absolut)**: Notasi kurung mutlak yang berfungsi untuk memastikan hasil pengurangan selalu bernilai positif, sehingga tidak terpengaruh oleh cabang mana yang memiliki pendapatan lebih besar.
+* **$ST_1$**: Representasi dari total nominal pendapatan finansial yang diperoleh oleh Store 1.
+* **$ST_2$**: Representasi dari total nominal pendapatan finansial yang diperoleh oleh Store 2.
+* **$\approx 0$**: Simbol yang menunjukkan bahwa hasil selisih tersebut mendekati nilai nol, yang mengonfirmasi bahwa performa penjualan kedua cabang berada pada kondisi setara secara signifikan.
+
+Hal ini menandakan distribusi inventaris film dan kinerja staf di kedua cabang sudah berjalan dengan tingkat efisiensi yang sebanding ($Efisiensi_{Store 1} \equiv Efisiensi_{Store 2}$).
+
+
+---
+
+## 7. Kesimpulan
+
+Berdasarkan seluruh rangkaian analisis data, pemodelan matematis, dan visualisasi grafik yang telah dilakukan pada database Sakila, dapat ditarik beberapa kesimpulan utama sebagai berikut:
+
+1. **Dominasi Gerografis Pasar Global:** Terdapat konsentrasi pasar yang sangat kuat di wilayah Asia dan Amerika Utara, di mana negara **India**, **China**, dan **United States** secara konsisten menempati urutan teratas dalam kontribusi finansial. Hal ini mengonfirmasi bahwa loyalitas pelanggan dan frekuensi transaksi pada platform Sakila sangat dipengaruhi oleh faktor demografi wilayah. Oleh karena itu, investasi alokasi anggaran pemasaran digital dan ekspansi lisensi film berbasis preferensi kultural harus diprioritaskan pada ketiga negara tersebut guna memaksimalkan rasio pengembalian investasi (*Return on Investment*).
+
+2. **Kesetaraan Efisiensi Operasional Cabang:** Evaluasi performa internal membuktikan bahwa tidak ada ketimpangan produktivitas operasional antara kedua gerai fisik. Pembuktian melalui nilai selisih mutlak pendapatan yang mendekati nol ($\Delta R \approx 0$) mengonfirmasi bahwa **Store 1** dan **Store 2** memiliki efisiensi kinerja yang sebanding dan homogen di kisaran \$33,000. Struktur performa yang seimbang ini merefleksikan keberhasilan manajemen perusahaan dalam mengimplementasikan standardisasi pelayanan staf serta sistem distribusi inventaris produk yang merata di seluruh titik cabang operasional.
