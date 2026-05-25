@@ -1,6 +1,6 @@
 ---
 title: "Analisis Geografis Pelanggan dan Performa Penjualan Antar Cabang Sakila"
-author: "Muhammad Irsyad Baihaqi - M0725089 - B"
+author: "Muhammad Irsyad Baihaqi - M0725089 - E"
 date: "`r Sys.Date()`"
 output:
   html_document:
